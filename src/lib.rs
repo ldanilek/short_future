@@ -6,34 +6,6 @@ use futures::{future::BoxFuture, Future};
 /// It is equivalent to BoxFuture<'a + 'b, T> or equivalently
 /// BoxFuture<'a, T> where 'b: 'a. i.e. It's a BoxFuture with a shorter
 /// lifetime than both 'a and 'b.
-///
-/// ShortBoxFuture works around limitations of HRTBs and explicit lifetime
-/// bounds. This is useful when wrapping async closures, where the closure
-/// returns a future that depends on both:
-/// 1. references in the enclosing scope with lifetime 'a.
-/// 2. references in the closure's arguments with lifetime 'b.
-///
-/// For example, you can write a helper that retries a database operation, where
-/// a new transaction is created for every retry, and the data is borrowed from
-/// the enclosing scope:
-///
-/// async fn run_twice<'a>(&'a self, f: F) -> anyhow::Result<()>
-/// where F: for<'b> Fn(&'b mut Transaction) -> ShortBoxFuture<'b, 'a, anyhow::Result<()>>
-/// {
-///     for i in 0..2 {
-///         let mut tx = self.begin();
-///         f(&mut tx).0.await?;
-///     }
-/// }
-///
-/// async fn go(&self) {
-///     let data = get_data();
-///     run_twice(|tx| async {
-///         tx.get(data.id()).await;
-///     }.into())).await
-/// }
-///
-/// See tests below for more examples.
 pub struct ShortBoxFuture<'b, 'a: 'b, T>(pub BoxFuture<'b, T>, PhantomData<&'a ()>);
 impl<'b, 'a: 'b, T, F: Future<Output = T> + Send + 'b> From<F> for ShortBoxFuture<'b, 'a, T> {
     fn from(f: F) -> Self {
@@ -108,15 +80,14 @@ mod tests {
     }
 }
 
+/// You may be thinking "the borrow checker is smart and I'm clever.
+/// I can do this with lifetimes/HRTBs/other".
+/// Prepare to be disappointed. These are examples of what doesn't work.
+/// Remove the #[cfg(any())] directives to see the errors.
 #[cfg(test)]
 #[allow(unused_imports)]
 #[allow(dead_code)]
 mod failing_tests {
-    // You may be thinking "the borrow checker is smart and I'm clever.
-    // I can do this with lifetimes/HRTBs/other".
-    // Prepare to be disappointed. These are examples of what doesn't work.
-    // Remove the #[cfg(any())] directives to see the errors.
-
     use super::{
         tests::{str_eq, with_retries},
         ShortBoxFuture,
