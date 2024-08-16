@@ -23,13 +23,14 @@ where F: for<'b> Fn(&'b mut Transaction) -> ShortBoxFuture<'b, 'a, anyhow::Resul
         let mut tx = self.begin();
         f(&mut tx).0.await?;
     }
+    Ok(())
 }
 
 async fn go(&self) {
     let data = get_data();
-    run_twice(|tx| async {
-        tx.get(data.id()).await;
-    }.into())).await
+    self.run_twice(|tx| async {
+        tx.get(&data.id).await;
+    }.into()).await
 }
 ```
 
