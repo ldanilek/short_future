@@ -3,7 +3,7 @@ name = "short_future"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "
+description = "Future with shorter lifetime for async closures"
 
 [dependencies]
 futures = "0.3"
