@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 description = "Future with shorter lifetime for async closures"
+repository = "https://github.com/ldanilek/short_future"
+readme = "README.md"
+authors = ["Lee Danilek"]
 
 [dependencies]
 futures = "0.3"
