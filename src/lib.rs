@@ -6,13 +6,13 @@ use futures::{future::BoxFuture, Future};
 /// It is equivalent to BoxFuture<'a + 'b, T> or equivalently
 /// BoxFuture<'a, T> where 'b: 'a. i.e. It's a BoxFuture with a shorter
 /// lifetime than both 'a and 'b.
-/// 
+///
 /// ShortBoxFuture works around limitations of HRTBs and explicit lifetime
 /// bounds. This is useful when wrapping async closures, where the closure
 /// returns a future that depends on both:
 /// 1. references in the enclosing scope with lifetime 'a.
 /// 2. references in the closure's arguments with lifetime 'b.
-/// 
+///
 /// For example, you can write a helper that retries a database operation, where
 /// a new transaction is created for every retry, and the data is borrowed from
 /// the enclosing scope:
@@ -32,15 +32,10 @@ use futures::{future::BoxFuture, Future};
 ///         tx.get(data.id()).await;
 ///     }.into())).await
 /// }
-/// 
+///
 /// See tests below for more examples.
-pub struct ShortBoxFuture<'b, 'a: 'b, T>(
-    pub BoxFuture<'b, T>,
-    PhantomData<&'a ()>,
-);
-impl<'b, 'a: 'b, T, F: Future<Output = T> + Send + 'b> From<F>
-    for ShortBoxFuture<'b, 'a, T>
-{
+pub struct ShortBoxFuture<'b, 'a: 'b, T>(pub BoxFuture<'b, T>, PhantomData<&'a ()>);
+impl<'b, 'a: 'b, T, F: Future<Output = T> + Send + 'b> From<F> for ShortBoxFuture<'b, 'a, T> {
     fn from(f: F) -> Self {
         Self(Box::pin(f), PhantomData)
     }
@@ -51,7 +46,8 @@ mod tests {
     use super::ShortBoxFuture;
 
     pub async fn with_retries<'a, F>(f: F) -> usize
-    where F: for<'b> Fn(&'b str) -> ShortBoxFuture<'b, 'a, Result<(), ()>>
+    where
+        F: for<'b> Fn(&'b str) -> ShortBoxFuture<'b, 'a, Result<(), ()>>,
     {
         for i in 0..100 {
             // Imagine the transaction cannot be cloned or moved, because it
@@ -62,7 +58,7 @@ mod tests {
             drop(transaction);
             match result {
                 Ok(()) => return i,
-                Err(()) => {},
+                Err(()) => {}
             }
         }
         0
@@ -80,18 +76,14 @@ mod tests {
     async fn test_retries_closure() {
         // Imagine this data is large and expensive to clone.
         let data = format!("11 transaction");
-        let result = with_retries(|session| async {
-            str_eq(session, &data).await
-        }.into()).await;
+        let result = with_retries(|session| async { str_eq(session, &data).await }.into()).await;
         assert_eq!(result, 11);
     }
 
     #[tokio::test]
     async fn test_retries_fn() {
         let data = format!("11 transaction");
-        let result = with_retries(|session|
-            str_eq(session, &data).into()
-        ).await;
+        let result = with_retries(|session| str_eq(session, &data).into()).await;
         assert_eq!(result, 11);
     }
 
@@ -101,13 +93,17 @@ mod tests {
     async fn test_retries_semi_inline() {
         struct WrapStr<'a>(&'a str);
         let data = format!("11 transaction");
-        let result = with_retries(|session| async {
-            if WrapStr(session).0 == &data {
-                Ok(())
-            } else {
-                Err(())
+        let result = with_retries(|session| {
+            async {
+                if WrapStr(session).0 == &data {
+                    Ok(())
+                } else {
+                    Err(())
+                }
             }
-        }.into()).await;
+            .into()
+        })
+        .await;
         assert_eq!(result, 11);
     }
 }
@@ -122,24 +118,20 @@ mod failing_tests {
     // Remove the #[cfg(any())] directives to see the errors.
 
     use super::{
+        tests::{str_eq, with_retries},
         ShortBoxFuture,
-        tests::{
-        str_eq,
-        with_retries,
-    }};
-    use std::{marker::PhantomData, pin::Pin};
-    use futures::{
-        FutureExt,
-        future::{
-            BoxFuture,
-            Future,
-        },
     };
+    use futures::{
+        future::{BoxFuture, Future},
+        FutureExt,
+    };
+    use std::{marker::PhantomData, pin::Pin};
 
     /// Error: "type alias takes one generic but two generic arguments were supplied"
     #[cfg(any())]
     async fn with_retries_boxfuture_multi_bound<'a, F>(f: F)
-    where F: for<'b> Fn(&'b str) -> BoxFuture<'a + 'b, ()>
+    where
+        F: for<'b> Fn(&'b str) -> BoxFuture<'a + 'b, ()>,
     {
         for i in 0..100 {
             let transaction = format!("{i} transaction");
@@ -151,7 +143,8 @@ mod failing_tests {
     /// Error: "only a single explicit lifetime bound is permitted"
     #[cfg(any())]
     async fn with_retries_multi_bound<'a, F>(f: F)
-    where F: for<'b> Fn(&'b str) -> Pin<Box<dyn Future<Output = ()> + 'a + 'b>>
+    where
+        F: for<'b> Fn(&'b str) -> Pin<Box<dyn Future<Output = ()> + 'a + 'b>>,
     {
         for i in 0..100 {
             let transaction = format!("{i} transaction");
@@ -163,7 +156,8 @@ mod failing_tests {
     /// Error: "`impl Trait` is not allowed in the return type of `Fn` trait bounds"
     #[cfg(any())]
     async fn with_retries_impl_future<'a, F>(f: F)
-    where F: for<'b> Fn(&'b str) -> (impl Future<Output = ()> + 'a + 'b)
+    where
+        F: for<'b> Fn(&'b str) -> (impl Future<Output = ()> + 'a + 'b),
     {
         for i in 0..100 {
             let transaction = format!("{i} transaction");
@@ -175,7 +169,8 @@ mod failing_tests {
     /// This is fine on its own, but the closure can't borrow from the
     /// enclosing scope (see test_single_hrtb).
     async fn with_retries_single_hrtb<F>(f: F)
-    where F: for<'a> Fn(&'a str) -> BoxFuture<'a, ()>
+    where
+        F: for<'a> Fn(&'a str) -> BoxFuture<'a, ()>,
     {
         for i in 0..100 {
             let transaction = format!("{i} transaction");
@@ -188,15 +183,20 @@ mod failing_tests {
     #[cfg(any())]
     async fn test_single_hrtb() {
         let data = format!("11 transaction");
-        with_retries_single_hrtb(|session| async {
-            str_eq(session, &data);
-        }.boxed()).await;
+        with_retries_single_hrtb(|session| {
+            async {
+                str_eq(session, &data);
+            }
+            .boxed()
+        })
+        .await;
     }
 
     /// Error: "argument requires that `transaction` is borrowed for `'a`"
     #[cfg(any())]
     async fn with_retries_no_hrtb<'a, F>(f: F)
-    where F: Fn(&'a str) -> BoxFuture<'a, ()>
+    where
+        F: Fn(&'a str) -> BoxFuture<'a, ()>,
     {
         for i in 0..100 {
             let transaction = format!("{i} transaction");
@@ -208,7 +208,8 @@ mod failing_tests {
     /// Error: "bounds cannot be used in this context"
     #[cfg(any())]
     pub async fn with_retries_hrtb_dependency<'a, F>(f: F)
-    where F: for<'b: 'a> Fn(&'b str) -> BoxFuture<'b, ()>
+    where
+        F: for<'b: 'a> Fn(&'b str) -> BoxFuture<'b, ()>,
     {
         for i in 0..100 {
             let transaction = format!("{i} transaction");
@@ -221,20 +222,24 @@ mod failing_tests {
     /// This is the same as super::tests::test_retries_closure but
     /// `str_eq` is inlined. It's the same as
     /// super::tests::test_retries_semi_inline minus the WrapStr.
-    /// 
+    ///
     /// Error: "async block may outlive the current function, but it borrows
     /// `session`, which is owned by the current function"
     #[cfg(any())]
     #[tokio::test]
     async fn test_retries_fully_inline() {
         let data = format!("11 transaction");
-        let result = with_retries(|session| async {
-            if session == &data {
-                Ok(())
-            } else {
-                Err(())
+        let result = with_retries(|session| {
+            async {
+                if session == &data {
+                    Ok(())
+                } else {
+                    Err(())
+                }
             }
-        }.into()).await;
+            .into()
+        })
+        .await;
         assert_eq!(result, 11);
     }
 
@@ -243,7 +248,8 @@ mod failing_tests {
     /// Error: "`transaction` does not live long enough"
     #[cfg(any())]
     async fn with_retries_flipped_bound_order<'a, F>(f: F)
-    where F: for<'b> Fn(&'b str) -> ShortBoxFuture<'a, 'b, ()>
+    where
+        F: for<'b> Fn(&'b str) -> ShortBoxFuture<'a, 'b, ()>,
     {
         for i in 0..100 {
             let transaction = format!("{i} transaction");
