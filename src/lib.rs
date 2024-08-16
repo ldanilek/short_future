@@ -2,10 +2,9 @@ use std::marker::PhantomData;
 
 use futures::{future::BoxFuture, Future};
 
-/// ShortBoxFuture<'a, 'b, T> is a future with a shorter lifetime.
-/// It is equivalent to BoxFuture<'a + 'b, T> or equivalently
-/// BoxFuture<'a, T> where 'b: 'a. i.e. It's a BoxFuture with a shorter
-/// lifetime than both 'a and 'b.
+/// ShortBoxFuture<'b, 'a, T> is a future with a shorter lifetime than both 'a and 'b.
+/// It is equivalent to BoxFuture<'a + 'b, T> or
+/// BoxFuture<'b, T> where 'a > 'b.
 pub struct ShortBoxFuture<'b, 'a: 'b, T>(pub BoxFuture<'b, T>, PhantomData<&'a ()>);
 impl<'b, 'a: 'b, T, F: Future<Output = T> + Send + 'b> From<F> for ShortBoxFuture<'b, 'a, T> {
     fn from(f: F) -> Self {
